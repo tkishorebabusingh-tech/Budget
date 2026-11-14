@@ -63,9 +63,20 @@ that browser; the padlock button in the header locks it again. Five wrong
 passwords from one address block further attempts for five minutes. Changing
 the password signs every browser out.
 
-The lock protects the data on the server. When the site runs on Netlify with
-no backend, the numbers live in the visitor's own browser and there is nothing
-on a server to lock.
+### Without a backend (Netlify only)
+
+When the pages can't reach the Flask server, the numbers live in the
+visitor's own browser. The first visit asks you to choose a password; the data
+is then stored encrypted (AES-GCM, key derived from the password with
+PBKDF2-SHA256), so the saved copy can't be read without it.
+
+- Moving between pages doesn't ask again. Closing the tab, or pressing the
+  padlock in the header, locks it.
+- Any numbers already saved in that browser are encrypted when the password
+  is first set.
+- **A forgotten password can't be recovered.** "Forgot your password?" on the
+  lock screen deletes the data saved in that browser so you can start over.
+- Each browser and device has its own data and its own password.
 
 ## Settings
 

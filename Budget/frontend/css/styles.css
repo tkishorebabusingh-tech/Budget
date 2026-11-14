@@ -592,6 +592,13 @@ dialog.modal h3 { font-size: 22px; letter-spacing: -0.03em; }
 }
 .lock-icon svg { width: 26px; height: 26px; }
 .lock.open .lock-icon { animation: unlock 0.6s var(--ease) both; }
+.lock-card .lock-note { font-size: 13px; text-align: left; }
+.lock-forgot {
+  border: 0; background: none; padding: 4px; font-size: 13px; font-weight: 600; color: var(--ink-2);
+  text-decoration: underline; text-decoration-color: var(--axis); text-underline-offset: 4px;
+}
+.lock-forgot:hover { color: var(--ink); }
+.lock-forgot.armed { color: var(--critical-text); text-decoration-color: currentColor; }
 .lock-error { min-height: 1.5em; color: var(--critical-text) !important; font-weight: 700; }
 .lock-card.shake { animation: shake 0.45s var(--ease); }
 @keyframes bob { 50% { transform: translateY(-5px) rotate(-4deg); } }

@@ -213,18 +213,23 @@ const UI = (() => {
     const badge = $('#syncBadge');
     const note = $('#syncNote');
     const api = Store.mode === 'api';
+    const sealed = !api && Store.vaultOpen;
     if (badge) {
       badge.hidden = false;
       badge.className = `sync ${api ? 'ok' : 'local'}`;
-      badge.innerHTML = `<i aria-hidden="true"></i><span>${api ? 'Synced to server' : 'Saved in this browser'}</span>`;
+      badge.innerHTML = `<i aria-hidden="true"></i><span>${api ? 'Synced to server' : sealed ? 'Encrypted in this browser' : 'Saved in this browser'}</span>`;
       badge.title = api
         ? 'Your numbers are stored by the Flask server.'
-        : 'The server is not reachable, so your numbers are kept in this browser only.';
+        : sealed
+          ? 'Your numbers are kept in this browser only, encrypted with your password.'
+          : 'The server is not reachable, so your numbers are kept in this browser only.';
     }
     if (note) {
       note.textContent = api
         ? 'Your numbers are stored in the Flask server’s database.'
-        : 'The Flask server is not reachable from this page, so your numbers are stored in this browser only.';
+        : sealed
+          ? 'Your numbers are stored in this browser only, encrypted with your password. Closing the tab or pressing the padlock locks them.'
+          : 'The Flask server is not reachable from this page, so your numbers are stored in this browser only.';
     }
   }
 
@@ -232,9 +237,25 @@ const UI = (() => {
   const LOCK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5" y="11" width="14" height="9" rx="2.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>';
   let lockPromise = null;
 
+  const LOCK_COPY = {
+    // the Flask server holds the data and checks the password
+    server: { title: 'Locked', text: 'Enter your password to see your numbers.', button: 'Unlock', busy: 'Unlocking…' },
+    // no server: the data is encrypted in this browser
+    unlock: { title: 'Locked', text: 'Enter your password to open the numbers saved in this browser.', button: 'Unlock', busy: 'Unlocking…' },
+    create: {
+      title: 'Set a password',
+      text: 'Your numbers are saved in this browser. Choose a password to lock them; they will be stored encrypted.',
+      note: 'Write it down somewhere safe. A forgotten password cannot be recovered, only reset by deleting the data.',
+      button: 'Lock with this password',
+      busy: 'Encrypting…',
+    },
+  };
+
   /** Cover the page until the right password is entered. Resolves once unlocked. */
-  function lockScreen() {
+  function lockScreen(kind = 'server') {
     if (lockPromise) return lockPromise;
+    const copy = LOCK_COPY[kind];
+    const creating = kind === 'create';
     lockPromise = new Promise((resolve) => {
       const behind = $$('body > header, body > main, body > footer');
       behind.forEach((el) => { el.inert = true; });
@@ -248,42 +269,71 @@ const UI = (() => {
       overlay.innerHTML = `
         <form class="lock-card" novalidate>
           <span class="lock-icon">${LOCK_ICON}</span>
-          <h2 id="lockTitle">Locked</h2>
-          <p>Enter your password to see your numbers.</p>
+          <h2 id="lockTitle">${copy.title}</h2>
+          <p>${copy.text}</p>
           <input type="text" name="username" value="budget" autocomplete="username" hidden>
-          <label class="field"><span>Password</span>
-            <input type="password" name="password" autocomplete="current-password" required>
+          <label class="field"><span>${creating ? 'New password' : 'Password'}</span>
+            <input type="password" name="password" autocomplete="${creating ? 'new-password' : 'current-password'}" required>
           </label>
+          ${creating ? `
+          <label class="field"><span>Type it again</span>
+            <input type="password" name="confirm" autocomplete="new-password" required>
+          </label>
+          <p class="lock-note">${copy.note}</p>` : ''}
           <p class="lock-error" role="alert"></p>
-          <button type="submit" class="btn primary">Unlock</button>
+          <button type="submit" class="btn primary">${copy.button}</button>
+          ${kind === 'unlock' ? '<button type="button" class="lock-forgot">Forgot your password?</button>' : ''}
         </form>`;
       document.body.append(overlay);
 
       const form = $('form', overlay);
       const input = form.elements.password;
       const error = $('.lock-error', overlay);
-      const button = $('button', overlay);
+      const button = $('button[type="submit"]', overlay);
       input.focus();
+
+      const fail = (message) => {
+        error.textContent = message;
+        form.classList.remove('shake');
+        void form.offsetWidth; // restart the animation
+        form.classList.add('shake');
+      };
+
+      $('.lock-forgot', overlay)?.addEventListener('click', (e) => {
+        const forgot = e.currentTarget;
+        if (!forgot.classList.contains('armed')) {
+          forgot.classList.add('armed');
+          forgot.textContent = 'Delete all data saved here and start over? This cannot be undone. Click again to confirm.';
+          return;
+        }
+        Store.vault.destroy();
+        location.reload();
+      });
 
       form.addEventListener('submit', async (e) => {
         e.preventDefault();
         if (!input.value) { input.focus(); return; }
+        if (creating) {
+          if (input.value.length < 8) { fail('Use at least 8 characters.'); input.focus(); return; }
+          if (input.value !== form.elements.confirm.value) { fail('The two passwords don’t match.'); form.elements.confirm.select(); return; }
+        }
         button.disabled = true;
+        button.textContent = copy.busy;
         error.textContent = '';
         try {
-          await Store.login(input.value);
+          if (kind === 'server') await Store.login(input.value);
+          else if (kind === 'unlock') await Store.vault.unlock(input.value);
+          else await Store.vault.create(input.value);
           behind.forEach((el) => { el.inert = false; });
           overlay.classList.add('open');
           setTimeout(() => overlay.remove(), reduceMotion ? 0 : 600);
           lockPromise = null;
           resolve();
         } catch (err) {
-          error.textContent = err.message;
-          form.classList.remove('shake');
-          void form.offsetWidth; // restart the animation
-          form.classList.add('shake');
+          fail(err.message);
           input.select();
           button.disabled = false;
+          button.textContent = copy.button;
         }
       });
     });
@@ -291,7 +341,7 @@ const UI = (() => {
   }
 
   function initLockButton() {
-    if (!Store.auth || $('#lockBtn')) return;
+    if (!Store.canLock || $('#lockBtn')) return;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.id = 'lockBtn';
@@ -300,7 +350,11 @@ const UI = (() => {
     btn.title = 'Lock';
     btn.innerHTML = LOCK_ICON;
     btn.addEventListener('click', async () => {
-      try { await Store.logout(); } catch (_) { /* reload shows the real state */ }
+      if (Store.mode === 'api') {
+        try { await Store.logout(); } catch (_) { /* reload shows the real state */ }
+      } else {
+        Store.vault.lock();
+      }
       location.reload();
     });
     $('.nav-tools')?.append(btn);
@@ -313,7 +367,12 @@ const UI = (() => {
     watchScroll();
     reveal();
     await Store.init();
-    if (Store.locked) await lockScreen();
+    if (Store.mode === 'api') {
+      if (Store.locked) await lockScreen('server');
+    } else if (Store.vaultSupported) {
+      if (!Store.hasVault()) await lockScreen('create');
+      else if (!(await Store.vault.resume())) await lockScreen('unlock');
+    }
     // Locked later on (login expired, or locked from another tab): ask again, then start fresh.
     addEventListener('budget:locked', () => lockScreen().then(() => location.reload()));
     initLockButton();

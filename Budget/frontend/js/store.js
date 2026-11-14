@@ -17,16 +17,139 @@ const Store = (() => {
 
   const empty = () => ({ accounts: [], entries: [], expenses: [] });
 
-  function readLocal() {
-    try {
-      const d = JSON.parse(localStorage.getItem(LS_KEY));
-      if (d && Array.isArray(d.accounts) && Array.isArray(d.entries) && Array.isArray(d.expenses)) return d;
-    } catch (_) { /* fall through */ }
-    return empty();
+  const normalize = (d) =>
+    (d && Array.isArray(d.accounts) && Array.isArray(d.entries) && Array.isArray(d.expenses)) ? d : empty();
+
+  function readPlain() {
+    try { return normalize(JSON.parse(localStorage.getItem(LS_KEY))); } catch (_) { return empty(); }
   }
-  function writeLocal(d) {
+
+  /* ---------------------------------------------------- browser vault
+   * With no server, the numbers live in this browser. Once a password is
+   * set they are kept encrypted (AES-GCM, key from PBKDF2-SHA256), so the
+   * stored copy cannot be read without the password. While unlocked, the
+   * key is held in sessionStorage so moving between pages does not ask
+   * again; closing the tab or pressing the lock button forgets it.
+   */
+  const VAULT_KEY = 'budget.vault.v1';
+  const SESSION_KEY = 'budget.vaultKey';
+  const ITERATIONS = 310000;
+  let vaultKey = null;  // CryptoKey while unlocked
+  let vaultMeta = null; // { v, iter, salt }
+  let cache = null;     // decrypted data while unlocked
+  let saving = Promise.resolve();
+
+  const vaultSupported = !!(window.crypto && crypto.subtle && window.TextEncoder);
+  const hasVault = () => { try { return localStorage.getItem(VAULT_KEY) != null; } catch (_) { return false; } };
+
+  function toB64(buf) {
+    const bytes = new Uint8Array(buf);
+    let s = '';
+    for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    return btoa(s);
+  }
+  function fromB64(str) {
+    const s = atob(str);
+    const out = new Uint8Array(s.length);
+    for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+    return out;
+  }
+
+  async function deriveKey(password, salt, iterations) {
+    const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveKey']);
+    return crypto.subtle.deriveKey(
+      { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+      base, { name: 'AES-GCM', length: 256 }, true, ['encrypt', 'decrypt'],
+    );
+  }
+  async function seal(key, obj) {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, new TextEncoder().encode(JSON.stringify(obj)));
+    return { iv: toB64(iv), ct: toB64(ct) };
+  }
+  async function unseal(key, box) {
+    const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: fromB64(box.iv) }, key, fromB64(box.ct));
+    return normalize(JSON.parse(new TextDecoder().decode(pt)));
+  }
+  const readVault = () => JSON.parse(localStorage.getItem(VAULT_KEY));
+
+  async function persist(snapshot) {
+    const box = await seal(vaultKey, snapshot);
+    localStorage.setItem(VAULT_KEY, JSON.stringify({ ...vaultMeta, ...box }));
+  }
+  async function remember() {
+    try { sessionStorage.setItem(SESSION_KEY, toB64(await crypto.subtle.exportKey('raw', vaultKey))); } catch (_) { /* ask again next page */ }
+  }
+  function forget() {
+    vaultKey = null; vaultMeta = null; cache = null;
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (_) { /* ignore */ }
+  }
+
+  const vault = {
+    /** First time: choose a password and encrypt whatever is already saved here. */
+    async create(password) {
+      const salt = crypto.getRandomValues(new Uint8Array(16));
+      vaultKey = await deriveKey(password, salt, ITERATIONS);
+      vaultMeta = { v: 1, iter: ITERATIONS, salt: toB64(salt) };
+      cache = readPlain();
+      await persist(cache);
+      localStorage.removeItem(LS_KEY);
+      await remember();
+    },
+    async unlock(password) {
+      const record = readVault();
+      const key = await deriveKey(password, fromB64(record.salt), record.iter);
+      try { cache = await unseal(key, record); } catch (_) { throw new Error('Wrong password.'); }
+      vaultKey = key;
+      vaultMeta = { v: record.v, iter: record.iter, salt: record.salt };
+      await remember();
+    },
+    /** Reuse the key from earlier in this tab. */
+    async resume() {
+      let raw = null;
+      try { raw = sessionStorage.getItem(SESSION_KEY); } catch (_) { /* ignore */ }
+      if (!raw || !hasVault()) return false;
+      try {
+        const record = readVault();
+        const key = await crypto.subtle.importKey('raw', fromB64(raw), 'AES-GCM', true, ['encrypt', 'decrypt']);
+        cache = await unseal(key, record);
+        vaultKey = key;
+        vaultMeta = { v: record.v, iter: record.iter, salt: record.salt };
+        return true;
+      } catch (_) {
+        forget();
+        return false;
+      }
+    },
+    lock: forget,
+    /** Forgotten password: the only way forward is to delete everything stored here. */
+    destroy() {
+      forget();
+      localStorage.removeItem(VAULT_KEY);
+      localStorage.removeItem(LS_KEY);
+    },
+  };
+
+  // Another tab saved: pick up its version so this tab doesn't write over it.
+  addEventListener('storage', async (e) => {
+    if (e.key !== VAULT_KEY || !vaultKey || !e.newValue) return;
+    try { cache = await unseal(vaultKey, JSON.parse(e.newValue)); } catch (_) { /* different password; ignore */ }
+  });
+
+  function readLocal() {
+    return cache ? structuredClone(cache) : readPlain();
+  }
+  async function writeLocal(d) {
     d.expenses.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    localStorage.setItem(LS_KEY, JSON.stringify(d));
+    if (!vaultKey) {
+      if (hasVault()) throw new Error('Locked. Enter your password first.');
+      localStorage.setItem(LS_KEY, JSON.stringify(d));
+      return;
+    }
+    cache = structuredClone(d);
+    const snapshot = cache;
+    saving = saving.catch(() => {}).then(() => persist(snapshot));
+    return saving;
   }
 
   async function call(method, path, payload) {
@@ -90,7 +213,7 @@ const Store = (() => {
       const d = readLocal();
       const acc = { id: uid(), kind: a.kind, name: a.name, bank: a.bank || '', color: a.color || '' };
       d.accounts.push(acc);
-      writeLocal(d);
+      await writeLocal(d);
       return acc;
     },
     async updateAccount(id, a) {
@@ -98,7 +221,7 @@ const Store = (() => {
       const acc = d.accounts.find((x) => x.id === id);
       if (!acc) throw new Error('Account not found.');
       Object.assign(acc, { kind: a.kind, name: a.name, bank: a.bank || '', color: a.color || '' });
-      writeLocal(d);
+      await writeLocal(d);
       return acc;
     },
     async deleteAccount(id) {
@@ -106,7 +229,7 @@ const Store = (() => {
       d.accounts = d.accounts.filter((x) => x.id !== id);
       d.entries = d.entries.filter((x) => x.account_id !== id);
       d.expenses.forEach((x) => { if (x.account_id === id) x.account_id = null; });
-      writeLocal(d);
+      await writeLocal(d);
     },
     async saveMonth(month, entries) {
       const d = readLocal();
@@ -114,19 +237,19 @@ const Store = (() => {
         d.entries = d.entries.filter((x) => !(x.month === month && x.account_id === item.account_id));
         if (item.amount != null) d.entries.push({ month, account_id: item.account_id, amount: item.amount });
       }
-      writeLocal(d);
+      await writeLocal(d);
     },
     async addExpense(e) {
       const d = readLocal();
       const exp = { id: uid(), date: e.date, amount: e.amount, category: e.category, note: e.note || '', account_id: e.account_id || null };
       d.expenses.unshift(exp);
-      writeLocal(d);
+      await writeLocal(d);
       return exp;
     },
     async deleteExpense(id) {
       const d = readLocal();
       d.expenses = d.expenses.filter((x) => x.id !== id);
-      writeLocal(d);
+      await writeLocal(d);
     },
     async importData(incoming) {
       const d = readLocal();
@@ -137,10 +260,10 @@ const Store = (() => {
       (incoming.accounts || []).forEach((a) => upsert(d.accounts, a, (x) => x.id === a.id));
       (incoming.entries || []).forEach((e) => upsert(d.entries, e, (x) => x.month === e.month && x.account_id === e.account_id));
       (incoming.expenses || []).forEach((e) => upsert(d.expenses, e, (x) => x.id === e.id));
-      writeLocal(d);
+      await writeLocal(d);
       return readLocal();
     },
-    async reset() { writeLocal(empty()); },
+    async reset() { await writeLocal(empty()); },
   };
 
   const run = (name) => (...args) => (mode === 'api' ? api : local)[name](...args);
@@ -234,6 +357,11 @@ const Store = (() => {
     get locked() { return locked; },
     login,
     logout,
+    vaultSupported,
+    hasVault,
+    vault,
+    get vaultOpen() { return !!vaultKey; },
+    get canLock() { return (mode === 'api' && auth) || (mode === 'local' && !!vaultKey); },
     load: run('load'),
     addAccount: run('addAccount'),
     updateAccount: run('updateAccount'),
