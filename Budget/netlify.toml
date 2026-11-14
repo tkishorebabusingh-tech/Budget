@@ -1,0 +1,19 @@
+# Netlify hosts the static frontend only. It cannot run the Python server.
+[build]
+  publish = "frontend"
+
+# Once the Flask backend is running on a Python host, send API calls to it by
+# uncommenting this block and replacing the URL. The browser keeps talking to
+# the Netlify address, so no CORS setup is needed.
+#
+# [[redirects]]
+#   from = "/api/*"
+#   to = "https://YOUR-BACKEND-HOST/api/:splat"
+#   status = 200
+#   force = true
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "no-referrer"

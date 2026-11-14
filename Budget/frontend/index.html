@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Budget — Dashboard</title>
+  <meta name="description" content="Track credit card dues against your savings, month by month.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%232a78d6'/%3E%3Crect x='10' y='10' width='12' height='12' rx='3' fill='%23fcfcfb'/%3E%3C/svg%3E">
+  <script>
+    (function () { try { var t = localStorage.getItem('budget.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="scroll-progress" aria-hidden="true"></div>
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <header class="nav" id="nav">
+    <a class="brand" href="index.html" aria-label="Budget, home">
+      <span class="brand-mark" aria-hidden="true"></span><span>Budget</span>
+    </a>
+    <nav class="nav-links" aria-label="Pages">
+      <a href="index.html" aria-current="page">Dashboard</a>
+      <a href="spending.html">Spending</a>
+    </nav>
+    <div class="nav-tools">
+      <span class="sync" id="syncBadge" hidden></span>
+      <div class="month-switch" role="group" aria-label="Month">
+        <button type="button" id="monthPrev" aria-label="Previous month">‹</button>
+        <span id="monthLabel" title="Jump back to this month">—</span>
+        <button type="button" id="monthNext" aria-label="Next month">›</button>
+      </div>
+      <button type="button" class="icon-btn" id="themeToggle" aria-label="Switch between light and dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero: the one number -->
+    <section class="hero" id="top">
+      <div class="hero-inner">
+        <p class="eyebrow" data-reveal>Balance · <span data-month-label></span></p>
+        <h1 class="hero-figure" id="heroNet" data-reveal style="--d:90ms">—</h1>
+        <p class="hero-sub" id="heroNote" data-reveal style="--d:180ms">What is left in your savings once every credit card is paid.</p>
+        <div class="kpis" data-stagger>
+          <div class="kpi" data-reveal="flip">
+            <span class="kpi-label"><i class="key" style="--c:var(--s-savings)"></i>Total savings</span>
+            <strong id="kpiSavings">—</strong>
+            <span class="kpi-sub" id="kpiSavingsSub"></span>
+          </div>
+          <div class="kpi" data-reveal="flip">
+            <span class="kpi-label"><i class="key" style="--c:var(--s-dues)"></i>Card dues</span>
+            <strong id="kpiDues">—</strong>
+            <span class="kpi-sub" id="kpiDuesSub"></span>
+          </div>
+          <div class="kpi" data-reveal="flip">
+            <span class="kpi-label"><i class="key" style="--c:var(--s-net)"></i>Change in balance</span>
+            <strong id="kpiDelta">—</strong>
+            <span class="kpi-sub" id="kpiDeltaSub"></span>
+          </div>
+        </div>
+      </div>
+      <a class="scroll-cue" href="#entry" aria-label="Scroll to this month's numbers"><span></span></a>
+    </section>
+
+    <div class="band" aria-hidden="true">
+      <div class="band-track">
+        <span>Savings</span><span>−</span><span>Card dues</span><span>=</span><b>Balance</b>
+        <span>Savings</span><span>−</span><span>Card dues</span><span>=</span><b>Balance</b>
+        <span>Savings</span><span>−</span><span>Card dues</span><span>=</span><b>Balance</b>
+        <span>Savings</span><span>−</span><span>Card dues</span><span>=</span><b>Balance</b>
+      </div>
+    </div>
+
+    <!-- Monthly entry -->
+    <section class="section" id="entry">
+      <header class="section-head" data-reveal>
+        <div>
+          <p class="eyebrow">Your numbers</p>
+          <h2><span data-month-label></span></h2>
+          <p class="lede">Type what each card says is due and what each savings account holds. The balance updates and saves as you type.</p>
+        </div>
+        <span class="save-state" id="saveState" aria-live="polite"></span>
+      </header>
+
+      <div class="empty" id="emptyState" hidden data-reveal="zoom">
+        <h3>Start with your accounts</h3>
+        <p>Add each credit card and each savings account once. After that, you only fill in the amounts every month.</p>
+        <div class="actions">
+          <button type="button" class="btn primary" data-add="card">Add a credit card</button>
+          <button type="button" class="btn ghost" data-add="savings">Add a savings account</button>
+          <button type="button" class="btn ghost" id="loadSample">Try it with sample data</button>
+        </div>
+      </div>
+
+      <div class="entry-grid" id="entryGrid">
+        <div data-reveal="left">
+          <div class="col-head">
+            <h3>Credit cards</h3>
+            <span class="col-total" id="duesTotal"></span>
+            <button type="button" class="btn ghost small" data-add="card">+ Add card</button>
+          </div>
+          <div class="card-list" id="cardList"></div>
+        </div>
+        <div data-reveal="right">
+          <div class="col-head">
+            <h3>Savings accounts</h3>
+            <span class="col-total" id="savingsTotal"></span>
+            <button type="button" class="btn ghost small" data-add="savings">+ Add account</button>
+          </div>
+          <div class="card-list" id="savingsList"></div>
+        </div>
+      </div>
+
+      <div class="equation" data-reveal="zoom" aria-label="Savings minus card dues equals balance">
+        <div><span><i class="key" style="--c:var(--s-savings)"></i>Savings</span><strong id="eqSavings">—</strong></div>
+        <i class="op" aria-hidden="true">−</i>
+        <div><span><i class="key" style="--c:var(--s-dues)"></i>Card dues</span><strong id="eqDues">—</strong></div>
+        <i class="op" aria-hidden="true">=</i>
+        <div class="eq-result"><span><i class="key" style="--c:var(--s-net)"></i>Balance</span><strong id="eqNet">—</strong></div>
+      </div>
+    </section>
+
+    <!-- Analytics -->
+    <section class="section" id="analytics">
+      <header class="section-head" data-reveal>
+        <div>
+          <p class="eyebrow">Analytics</p>
+          <h2>Where you stand, and where it is heading</h2>
+        </div>
+      </header>
+
+      <article class="panel" data-reveal>
+        <header class="panel-head">
+          <div>
+            <h3>Savings, card dues and balance by month</h3>
+            <p class="panel-sub" id="trendSub">Click a month to open it.</p>
+          </div>
+          <ul class="legend">
+            <li><i class="key" style="--c:var(--s-savings)"></i>Savings</li>
+            <li><i class="key" style="--c:var(--s-dues)"></i>Card dues</li>
+            <li><i class="key" style="--c:var(--s-net)"></i>Balance</li>
+          </ul>
+        </header>
+        <div id="trendChart"></div>
+      </article>
+
+      <div class="panel-grid" data-stagger>
+        <article class="panel" data-reveal>
+          <h3>Card dues by card</h3>
+          <p class="panel-sub"><span data-month-label></span></p>
+          <div id="duesBars" style="margin-top:16px"></div>
+        </article>
+        <article class="panel" data-reveal>
+          <h3>Savings by account</h3>
+          <p class="panel-sub"><span data-month-label></span></p>
+          <div id="savingsBars" style="margin-top:16px"></div>
+        </article>
+        <article class="panel" data-reveal>
+          <h3>Dues as a share of savings</h3>
+          <p class="panel-sub"><span data-month-label></span></p>
+          <div id="coverage"></div>
+        </article>
+      </div>
+
+      <article class="panel" data-reveal>
+        <header class="panel-head">
+          <div>
+            <h3>Month by month</h3>
+            <p class="panel-sub">Every month you have filled in, newest first.</p>
+          </div>
+        </header>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th scope="col">Month</th><th scope="col">Savings</th><th scope="col">Card dues</th><th scope="col">Balance</th><th scope="col">Change</th></tr></thead>
+            <tbody id="historyBody"></tbody>
+          </table>
+        </div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <p id="syncNote"></p>
+      <div class="footer-tools">
+        <label>Currency <select id="currencySelect" aria-label="Currency"></select></label>
+        <button type="button" class="btn danger small" id="resetAll">Delete all data</button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Add / edit account -->
+  <dialog class="modal" id="accountDialog" aria-labelledby="accountDialogTitle">
+    <form class="stack" id="accountForm" method="dialog" novalidate>
+      <h3 id="accountDialogTitle">Add an account</h3>
+      <div class="seg" role="radiogroup" aria-label="Account type">
+        <label><input type="radio" name="kind" value="card" checked><span>Credit card</span></label>
+        <label><input type="radio" name="kind" value="savings"><span>Savings account</span></label>
+      </div>
+      <label class="field"><span>Name</span>
+        <input name="name" maxlength="40" autocomplete="off" placeholder="e.g. Travel card" required>
+      </label>
+      <label class="field"><span>Bank or note <em>(optional)</em></span>
+        <input name="bank" maxlength="40" autocomplete="off" placeholder="e.g. Main bank">
+      </label>
+      <fieldset>
+        <legend>Colour</legend>
+        <div class="swatches" id="swatches"></div>
+      </fieldset>
+      <div class="modal-actions">
+        <button type="button" class="btn danger small" id="accountDelete" hidden>Delete</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" id="accountCancel">Cancel</button>
+        <button type="submit" class="btn primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/dashboard.js"></script>
+</body>
+</html>

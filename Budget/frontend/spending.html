@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Budget — Spending</title>
+  <meta name="description" content="Log what you spend and see where it goes.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='10' fill='%232a78d6'/%3E%3Crect x='10' y='10' width='12' height='12' rx='3' fill='%23fcfcfb'/%3E%3C/svg%3E">
+  <script>
+    (function () { try { var t = localStorage.getItem('budget.theme'); if (t) document.documentElement.dataset.theme = t; } catch (e) {} })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <div class="scroll-progress" aria-hidden="true"></div>
+  <div class="aurora" aria-hidden="true"><i></i><i></i><i></i></div>
+
+  <header class="nav" id="nav">
+    <a class="brand" href="index.html" aria-label="Budget, home">
+      <span class="brand-mark" aria-hidden="true"></span><span>Budget</span>
+    </a>
+    <nav class="nav-links" aria-label="Pages">
+      <a href="index.html">Dashboard</a>
+      <a href="spending.html" aria-current="page">Spending</a>
+    </nav>
+    <div class="nav-tools">
+      <span class="sync" id="syncBadge" hidden></span>
+      <div class="month-switch" role="group" aria-label="Month">
+        <button type="button" id="monthPrev" aria-label="Previous month">‹</button>
+        <span id="monthLabel" title="Jump back to this month">—</span>
+        <button type="button" id="monthNext" aria-label="Next month">›</button>
+      </div>
+      <button type="button" class="icon-btn" id="themeToggle" aria-label="Switch between light and dark">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16" /><path d="M12 4a8 8 0 0 1 0 16z" fill="currentColor"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero" id="top">
+      <div class="hero-inner">
+        <p class="eyebrow" data-reveal>Spent · <span data-month-label></span></p>
+        <h1 class="hero-figure" id="heroSpent" data-reveal style="--d:90ms">—</h1>
+        <p class="hero-sub" id="heroNote" data-reveal style="--d:180ms"></p>
+        <div class="kpis" data-stagger>
+          <div class="kpi" data-reveal="flip">
+            <span class="kpi-label">Average per day</span>
+            <strong id="kpiDaily">—</strong>
+            <span class="kpi-sub" id="kpiDailySub"></span>
+          </div>
+          <div class="kpi" data-reveal="flip">
+            <span class="kpi-label">Biggest category</span>
+            <strong id="kpiTop">—</strong>
+            <span class="kpi-sub" id="kpiTopSub"></span>
+          </div>
+          <div class="kpi" data-reveal="flip">
+            <span class="kpi-label">Compared with last month</span>
+            <strong id="kpiDelta">—</strong>
+            <span class="kpi-sub" id="kpiDeltaSub"></span>
+          </div>
+        </div>
+      </div>
+      <a class="scroll-cue" href="#add" aria-label="Scroll to add an expense"><span></span></a>
+    </section>
+
+    <div class="band" aria-hidden="true">
+      <div class="band-track">
+        <span>Groceries</span><b>Rent</b><span>Fuel</span><span>Dinner</span><b>Bills</b><span>Travel</span><span>Shopping</span>
+        <span>Groceries</span><b>Rent</b><span>Fuel</span><span>Dinner</span><b>Bills</b><span>Travel</span><span>Shopping</span>
+        <span>Groceries</span><b>Rent</b><span>Fuel</span><span>Dinner</span><b>Bills</b><span>Travel</span><span>Shopping</span>
+      </div>
+    </div>
+
+    <!-- Add + categories -->
+    <section class="section" id="add">
+      <header class="section-head" data-reveal>
+        <div>
+          <p class="eyebrow">Log it</p>
+          <h2>Add what you spent</h2>
+          <p class="lede">Amount, category, done. Everything else is optional.</p>
+        </div>
+      </header>
+
+      <div class="form-grid">
+        <article class="panel" data-reveal="left">
+          <form class="stack" id="expenseForm" novalidate>
+            <label class="field big"><span>Amount</span>
+              <div class="money-input">
+                <i id="amountSymbol" aria-hidden="true">₹</i>
+                <input name="amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0" required>
+              </div>
+            </label>
+            <fieldset>
+              <legend>Category</legend>
+              <div class="chips" id="categoryChips"></div>
+            </fieldset>
+            <div class="row-2">
+              <label class="field"><span>Date</span><input name="date" type="date" required></label>
+              <label class="field"><span>Paid with</span><select name="account_id" id="paidWith"></select></label>
+            </div>
+            <label class="field"><span>Note <em>(optional)</em></span>
+              <input name="note" maxlength="120" autocomplete="off" placeholder="e.g. Dinner with friends">
+            </label>
+            <div><button type="submit" class="btn primary">Add expense</button></div>
+          </form>
+        </article>
+
+        <article class="panel" data-reveal="right">
+          <h3>Where it went</h3>
+          <p class="panel-sub">Spending by category, <span data-month-label></span></p>
+          <div id="categoryBars" style="margin-top:16px"></div>
+        </article>
+      </div>
+    </section>
+
+    <!-- Patterns -->
+    <section class="section" id="patterns">
+      <header class="section-head" data-reveal>
+        <div>
+          <p class="eyebrow">Patterns</p>
+          <h2>When the money leaves</h2>
+        </div>
+      </header>
+
+      <article class="panel" data-reveal>
+        <header class="panel-head">
+          <div>
+            <h3>Spending day by day</h3>
+            <p class="panel-sub"><span data-month-label></span></p>
+          </div>
+        </header>
+        <div id="dailyChart"></div>
+      </article>
+
+      <article class="panel" data-reveal>
+        <header class="panel-head">
+          <div>
+            <h3>Spending over the last six months</h3>
+            <p class="panel-sub">The month you are viewing is highlighted. Click a month to open it.</p>
+          </div>
+        </header>
+        <div id="monthsChart"></div>
+      </article>
+    </section>
+
+    <!-- Transactions -->
+    <section class="section" id="transactions">
+      <header class="section-head" data-reveal>
+        <div>
+          <p class="eyebrow">Every entry</p>
+          <h2>Transactions</h2>
+        </div>
+        <span class="save-state" id="listCount"></span>
+      </header>
+      <div class="filters" data-reveal>
+        <input type="search" id="search" placeholder="Search notes and categories" aria-label="Search transactions">
+        <select id="categoryFilter" aria-label="Filter by category"></select>
+      </div>
+      <article class="panel" data-reveal>
+        <div id="txnList"></div>
+      </article>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="footer-inner">
+      <p id="syncNote"></p>
+      <div class="footer-tools">
+        <label>Currency <select id="currencySelect" aria-label="Currency"></select></label>
+      </div>
+    </div>
+  </footer>
+
+  <script src="js/store.js"></script>
+  <script src="js/ui.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/spending.js"></script>
+</body>
+</html>
